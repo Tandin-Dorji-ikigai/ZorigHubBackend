@@ -42,15 +42,15 @@ app.use('/api/google', googleRoute)
 app.use("/api/ndi", ndiRoutes);
 app.use("/api/ndi", webhookRoutes);
 
-app.get("/api/auth", async (req, res) => {
+app.get("/api/auth/google/start", async (req, res) => {
     try {
         const { account } = await createAppwriteClient("admin")
         console.log(account);
 
         const redirectUrl = await account.createOAuth2Token(
             OAuthProvider.Google,
-            "http://localhost:5173/api/auth/success",
-            "http://localhost:5173/api/auth/fail"
+            "http://localhost:5173/api/auth/google/success",
+            "http://localhost:5173/api/auth/google/fail"
         );
         console.log(redirectUrl);
 
@@ -68,23 +68,39 @@ app.get("/api/auth", async (req, res) => {
     }
 })
 
-app.get("/api/auth/success", async (req, res) => {
+app.get("/api/auth/google/success", async (req, res) => {
     try {
         const { userId, secret } = req.query;
+        if (!userId || !secret) {
+            return res.redirect("http://localhost:5173/google-fail?reason=missing_params");
+        }
+
         const { account } = await createAppwriteClient("admin");
+
+        // Create a server-side session out of the callback's userId/secret
         const session = await account.createSession(userId, secret);
+
+        // ⚠️ In dev (http), do not set secure:true
         res.cookie("session", session.secret, {
             httpOnly: true,
-            secure: true,
-            sameSite: "strict",
+            secure: false,               // set to true only when you're on HTTPS
+            sameSite: "lax",
             expires: new Date(session.expire),
             path: "/"
-        })
-        res.redirect("/google-success")
+        });
+
+        // Then send to your frontend success page
+        return res.redirect("http://localhost:5173/google-success");
     } catch (error) {
-        return res.json({ error })
+        console.error("OAuth success handler error:", error);
+        return res.redirect("http://localhost:5173/google-fail?reason=server_error");
     }
 })
+
+app.get("/api/auth/google/fail", (req, res) => {
+    return res.redirect("http://localhost:5173/google-fail?reason=oauth_denied");
+});
+
 
 app.get("/api/auth/user", async (req, res) => {
     try {
