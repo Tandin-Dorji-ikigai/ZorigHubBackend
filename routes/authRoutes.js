@@ -1,18 +1,15 @@
-const express = require('express');
+// routes/authRoutes.js
+const express = require("express");
+const  { auth, logout }  = require("../controllers/auth");
+
 const router = express.Router();
-const authorizeRole = require('../middleware/authorizeRole');
 
-// Assumes req.user is already populated by prior middleware
-router.get('/protected/admins/index', authorizeRole(['admin']), (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/protected/admins/index.html'));
+router.get("/me", auth, (req, res) => {
+  return res.json({
+    authenticated: true,
+    user: req.user,
+  });
 });
 
-router.get('/protected/artisans/index', authorizeRole(['artisan']), (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/protected/artisans/index.html'));
-});
-
-router.get('/protected/buyers/index', authorizeRole(['buyer']), (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/protected/buyers/index.html'));
-});
-
+router.post("/logout", logout);
 module.exports = router;
