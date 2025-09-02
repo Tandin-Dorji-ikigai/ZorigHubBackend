@@ -1,14 +1,16 @@
+// routes/transactionRoutes.js
 const express = require('express');
 const router = express.Router();
-const transactionController = require('../controllers/transactionController');
+const ctrl = require('../controllers/transactionController');
 
-// Get all transactions (with buyer and seller info)
-router.get('/', transactionController.getAllTransactions);
+router.get('/', ctrl.getAllTransactions);
+router.get('/:id', ctrl.getTransactionById);
+router.get('/buyer/:buyerId', ctrl.getTransactionsByBuyer);
+router.get('/seller/:sellerId', ctrl.getTransactionsBySeller);
+router.get('/order/:orderId', ctrl.getTransactionsByOrder);
 
-// Get a single transaction by ID (with buyer and seller info)
-router.get('/:id', transactionController.getTransactionById);
-
-// Create a new transaction
-router.post('/', transactionController.createTransaction);
+router.post('/', ctrl.createTransaction);
+router.patch('/:id/status', ctrl.updateTransactionStatus);
+router.post('/:id/refunds', ctrl.addRefund);
 
 module.exports = router;

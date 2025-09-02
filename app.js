@@ -32,7 +32,7 @@ app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/carts', require('./routes/cartRoutes'));
 app.use('/api/transactions', require('./routes/transactionRoutes'));
 app.use('/api/metadata', require('./routes/metadataRoutes'));
-
+app.use('/api/uploads', require('./routes/uploadRoutes'));
 
 app.use('/api/auth', googleAuthRoutes);
 app.use('/api/logged', loggedInUser);

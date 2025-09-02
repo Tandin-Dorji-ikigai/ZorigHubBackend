@@ -1,93 +1,9 @@
 const Product = require('../models/productModel');
 const Category = require('../models/categoryModel');
-// const AWS = require('aws-sdk');
-// const multer = require('multer');
-// const sharp = require('sharp');
-// const multerS3 = require('multer-s3');
-
-// Configure AWS S3
-// const s3 = new AWS.S3({
-//     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-//     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-//     region: process.env.AWS_REGION
-// });
-
-// Multer S3 storage configuration for product images
-// const upload = multer({ storage: multer.memoryStorage() });
-// const upload = multer({ storage: multer.memoryStorage() });
-
-// Middleware to use in routes for single product image upload
-// exports.uploadProductImage = upload.single('image');
-// exports.uploadProductImage = upload.single('image');
-
-// Update product including S3 image update
-// exports.updateProductWithImage = async (req, res) => {
-//     try {
-//         let imageUrl = null;
-// exports.updateProductWithImage = async (req, res) => {
-//     try {
-//         let imageUrl = null;
-
-//         // If a new image is uploaded, process and upload to S3
-//         if (req.file) {
-//             const processedBuffer = await sharp(req.file.buffer)
-//                 .resize({ width: 800 })
-//                 .jpeg({ quality: 80 })
-//                 .toBuffer();
-//         // If a new image is uploaded, process and upload to S3
-//         if (req.file) {
-//             const processedBuffer = await sharp(req.file.buffer)
-//                 .resize({ width: 800 })
-//                 .jpeg({ quality: 80 })
-//                 .toBuffer();
-
-//             const fileName = `product-images/${Date.now().toString()}-${req.file.originalname}`;
-//             const uploadResult = await s3.upload({
-//                 Bucket: process.env.AWS_S3_BUCKET_NAME,
-//                 Key: fileName,
-//                 Body: processedBuffer,
-//                 ContentType: 'image/jpeg',
-//                 // ACL: 'public-read'
-//             }).promise();
-//             const fileName = `product-images/${Date.now().toString()}-${req.file.originalname}`;
-//             const uploadResult = await s3.upload({
-//                 Bucket: process.env.AWS_S3_BUCKET_NAME,
-//                 Key: fileName,
-//                 Body: processedBuffer,
-//                 ContentType: 'image/jpeg',
-//                 // ACL: 'public-read'
-//             }).promise();
-
-//             imageUrl = uploadResult.Location;
-//         }
-
-//         const updateData = { ...req.body };
-//         if (imageUrl) updateData.image = imageUrl;
-//         const updateData = { ...req.body };
-//         if (imageUrl) updateData.image = imageUrl;
-
-//         // Log for debugging
-//         console.log('updateData:', updateData);
-//         // Log for debugging
-//         console.log('updateData:', updateData);
-
-//         const updatedProduct = await Product.findByIdAndUpdate(
-//             req.params.id,
-//             updateData,
-//             { new: true }
-//         );
-//         if (!updatedProduct) {
-//             return res.status(404).json({ error: 'Product not found' });
-//         }
-//         res.json(updatedProduct);
-//     } catch (err) {
-//         res.status(400).json({ error: err.message });
-//     }
-// };
 
 exports.getAllProducts = async (req, res) => {
     try {
-        const products = await Product.find();
+        const products = await Product.find().populate({ path: 'categoryId', select: 'name description' }).lean();
         res.json(products);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -114,45 +30,7 @@ exports.getProductById = async (req, res) => {
 
 exports.createProduct = async (req, res) => {
     try {
-        // if (!req.file) {
-        //     return res.status(400).json({ error: 'Product image is required.' });
-        // }
-        // if (!req.file) {
-        //     return res.status(400).json({ error: 'Product image is required.' });
-        // }
 
-        // const processedBuffer = await sharp(req.file.buffer)
-        //     .resize({ width: 800 })
-        //     .jpeg({ quality: 80 })
-        //     .toBuffer();
-        // const processedBuffer = await sharp(req.file.buffer)
-        //     .resize({ width: 800 })
-        //     .jpeg({ quality: 80 })
-        //     .toBuffer();
-
-        // const fileName = `product-images/${Date.now().toString()}-${req.file.originalname}`;
-        // const uploadResult = await s3.upload({
-        //     Bucket: process.env.AWS_S3_BUCKET_NAME,
-        //     Key: fileName,
-        //     Body: processedBuffer,
-        //     ContentType: 'image/jpeg',
-        //     // ACL: 'public-read'
-        // }).promise();
-        // const fileName = `product-images/${Date.now().toString()}-${req.file.originalname}`;
-        // const uploadResult = await s3.upload({
-        //     Bucket: process.env.AWS_S3_BUCKET_NAME,
-        //     Key: fileName,
-        //     Body: processedBuffer,
-        //     ContentType: 'image/jpeg',
-        //     // ACL: 'public-read'
-        // }).promise();
-
-        // const imageUrl = uploadResult.Location;
-        // const productData = { ...req.body, image: imageUrl };
-        // const imageUrl = uploadResult.Location;
-        // const productData = { ...req.body, image: imageUrl };
-
-        // Log for debugging
         const productData = req.body;
         console.log('productData:', productData);
 

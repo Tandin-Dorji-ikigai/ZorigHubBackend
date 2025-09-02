@@ -7,12 +7,12 @@ const productSchema = new Schema({
     description: String,
     price: { type: Number, required: true },
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category' },
-    soldCount: { type: Number, default: 0 }, // Number of times this product has been sold
+    soldCount: { type: Number, default: 0 },
     stockQuantity: Number,
     images: [String],
     createdAt: { type: Date, default: Date.now },
     isActive: { type: Boolean, default: true },
-    image: { type: String, required: true } // URL to the product's main image stored in AWS S3
+    image: { type: String, required: true } 
 });
 
 module.exports = mongoose.model('Product', productSchema);

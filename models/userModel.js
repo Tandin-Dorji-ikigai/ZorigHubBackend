@@ -3,8 +3,7 @@ const Schema = mongoose.Schema;
 
 const userSchema = new Schema({
     fullName: { type: String, required: true },
-    artisanDescription: { type: String }, // Description of what the user does if they are an artisan
-    walletAddress: { type: String, unique: true, required: true },
+    artisanDescription: { type: String },
     createdAt: { type: Date, default: Date.now },
     gender: { type: String },
     CID: { type: String, unique: true },
