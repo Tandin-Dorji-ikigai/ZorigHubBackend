@@ -63,15 +63,20 @@ exports.deleteProduct = async (req, res) => {
 
 exports.getFeaturedProducts = async (req, res) => {
     try {
-        // Find 4 products with the highest soldCount, only active products
-        const featuredProducts = await Product.find({ isActive: true })
-            .sort({ soldCount: -1 })
-            .limit(4);
+        // Make sure you're querying for featured products properly
+        const featuredProducts = await Product.find({featured: true}) // Filter by featured: true
+            .sort({ soldCount: -1 })  // Sort by sold count
+            .limit(4);  // Limit to the first 4 products
+
         res.json(featuredProducts);
+
+        console.log('Fetching featured products');
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
+
+
 
 exports.getProductsByCategory = async (req, res) => {
     try {

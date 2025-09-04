@@ -9,10 +9,11 @@ const productSchema = new Schema({
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category' },
     soldCount: { type: Number, default: 0 },
     stockQuantity: Number,
+    featured: { type: Boolean, default: false },
     images: [String],
     createdAt: { type: Date, default: Date.now },
-    isActive: { type: Boolean, default: true },
-    image: { type: String, required: true } 
+
+    image: { type: String, required: true }
 });
 
 module.exports = mongoose.model('Product', productSchema);
