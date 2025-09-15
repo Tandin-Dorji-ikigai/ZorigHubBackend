@@ -1,3 +1,4 @@
+// controllers/transactionController.js
 const mongoose = require('mongoose');
 const Transaction = require('../models/transactionModel');
 const Order = require('../models/orderModel');
@@ -5,30 +6,29 @@ const Order = require('../models/orderModel');
 const isObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 const POPULATE = [
-    { path: 'buyer', select: 'fullName email ' },
-    { path: 'seller', select: 'fullName email ' },
+    { path: 'buyer', select: 'fullName email' },
+    { path: 'seller', select: 'fullName email' },
     {
         path: 'order',
-        select: 'totalAmount status productId userId seller createdAt',
-        populate: { path: 'productId', select: 'name price image images' }
+        select: 'totalAmount status items userId createdAt',
+        populate: [
+            { path: 'items.product', select: 'name price image images' },
+            { path: 'items.seller', select: 'fullName' },
+        ],
     },
 ];
 
-/**
- * GET /api/transactions
- */
-exports.getAllTransactions = async (req, res) => {
+// GET /api/transactions
+exports.getAllTransactions = async (_req, res) => {
     try {
-        const txns = await Transaction.find().populate(POPULATE).lean();
+        const txns = await Transaction.find().sort({ createdAt: -1 }).populate(POPULATE).lean();
         res.json(txns);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
 
-/**
- * GET /api/transactions/:id
- */
+// GET /api/transactions/:id
 exports.getTransactionById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -45,17 +45,18 @@ exports.getTransactionById = async (req, res) => {
 /**
  * POST /api/transactions
  * Body can be:
- *  A) { order, method, provider, providerTxnId, currency?, status?, breakdown?, idempotencyKey?, notes?, metadata? }
- *     - amount/buyer/seller will be derived from the order
- *  or
+ *  A) { order, seller?, amount?, method?, provider?, providerTxnId?, currency?, status?, breakdown?, idempotencyKey?, notes?, metadata? }
+ *     - When the order has ONE seller, `seller` can be omitted; amount defaults to order.totalAmount.
+ *     - When the order has MULTIPLE sellers, `seller` is required; amount defaults to sum of that seller's item subtotals.
+ *
  *  B) { buyer, seller, amount, method?, provider?, providerTxnId?, currency?, status?, breakdown?, idempotencyKey?, notes?, metadata? }
  */
 exports.createTransaction = async (req, res) => {
     try {
         const {
             order,
-            buyer,
             seller,
+            buyer,
             amount,
             currency = 'BTN',
             status,                  // 'pending' | 'authorized' | 'captured' | 'failed' | 'refunded' | 'cancelled'
@@ -68,15 +69,15 @@ exports.createTransaction = async (req, res) => {
             metadata,
         } = req.body;
 
-        // Idempotency: if provided and exists, return existing safely
+        // Idempotency: return existing if present
         if (idempotencyKey) {
             const existing = await Transaction.findOne({ idempotencyKey }).populate(POPULATE).lean();
             if (existing) return res.status(200).json(existing);
         }
 
-        let doc = {
+        const doc = {
             currency: String(currency).toUpperCase(),
-            status: status || 'captured', // default to 'captured' after a successful payment step
+            status: status || 'captured',
             method,
             provider,
             providerTxnId,
@@ -92,12 +93,35 @@ exports.createTransaction = async (req, res) => {
             if (!o) return res.status(404).json({ error: 'Order not found' });
 
             doc.order = o._id;
-            doc.amount = Number.isFinite(+amount) ? +amount : Number(o.totalAmount) || 0;
             doc.buyer = o.userId;
-            doc.seller = o.seller;
 
+            // Collect seller ids from items
+            const sellers = Array.from(new Set((o.items || []).map((i) => String(i.seller))));
+            if (sellers.length === 0) return res.status(400).json({ error: 'Order has no sellers' });
+
+            if (sellers.length === 1) {
+                // single-seller order
+                doc.seller = sellers[0];
+                doc.amount = Number.isFinite(+amount) ? +amount : Number(o.totalAmount) || 0;
+            } else {
+                // multi-seller — require seller param
+                if (!seller) return res.status(400).json({ error: 'Order has multiple sellers; provide `seller` in body' });
+                if (!isObjectId(seller)) return res.status(400).json({ error: 'Invalid seller id' });
+                if (!sellers.includes(String(seller))) {
+                    return res.status(400).json({ error: 'Seller not part of this order' });
+                }
+
+                doc.seller = seller;
+
+                // default amount = sum of that seller's items
+                const computed = (o.items || [])
+                    .filter((i) => String(i.seller) === String(seller))
+                    .reduce((sum, i) => sum + Number(i.subtotal || 0), 0);
+
+                doc.amount = Number.isFinite(+amount) ? +amount : computed;
+            }
         } else {
-            // No order provided: require buyer/seller/amount
+            // raw transaction (no order)
             const missing = [];
             if (!buyer) missing.push('buyer');
             if (!seller) missing.push('seller');
@@ -116,7 +140,7 @@ exports.createTransaction = async (req, res) => {
             }
         }
 
-        // Set lifecycle timestamps based on status
+        // Lifecycle timestamps
         const now = new Date();
         if (doc.status === 'authorized') doc.authorizedAt = now;
         if (doc.status === 'captured') doc.capturedAt = now;
@@ -131,52 +155,43 @@ exports.createTransaction = async (req, res) => {
     }
 };
 
-/**
- * GET /api/transactions/buyer/:buyerId
- */
+// GET /api/transactions/buyer/:buyerId
 exports.getTransactionsByBuyer = async (req, res) => {
     try {
         const { buyerId } = req.params;
         if (!isObjectId(buyerId)) return res.status(400).json({ error: 'Invalid buyer id' });
-        const txns = await Transaction.find({ buyer: buyerId }).populate(POPULATE).lean();
+        const txns = await Transaction.find({ buyer: buyerId }).sort({ createdAt: -1 }).populate(POPULATE).lean();
         res.json(txns);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
 
-/**
- * GET /api/transactions/seller/:sellerId
- */
+// GET /api/transactions/seller/:sellerId
 exports.getTransactionsBySeller = async (req, res) => {
     try {
         const { sellerId } = req.params;
         if (!isObjectId(sellerId)) return res.status(400).json({ error: 'Invalid seller id' });
-        const txns = await Transaction.find({ seller: sellerId }).populate(POPULATE).lean();
+        const txns = await Transaction.find({ seller: sellerId }).sort({ createdAt: -1 }).populate(POPULATE).lean();
         res.json(txns);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
 
-/**
- * GET /api/transactions/order/:orderId
- */
+// GET /api/transactions/order/:orderId
 exports.getTransactionsByOrder = async (req, res) => {
     try {
         const { orderId } = req.params;
         if (!isObjectId(orderId)) return res.status(400).json({ error: 'Invalid order id' });
-        const txns = await Transaction.find({ order: orderId }).populate(POPULATE).lean();
+        const txns = await Transaction.find({ order: orderId }).sort({ createdAt: -1 }).populate(POPULATE).lean();
         res.json(txns);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
 
-/**
- * PATCH /api/transactions/:id/status
- * Body: { status: 'pending'|'authorized'|'captured'|'failed'|'refunded'|'cancelled' }
- */
+// PATCH /api/transactions/:id/status
 exports.updateTransactionStatus = async (req, res) => {
     try {
         const { id } = req.params;
@@ -206,10 +221,7 @@ exports.updateTransactionStatus = async (req, res) => {
     }
 };
 
-/**
- * POST /api/transactions/:id/refunds
- * Body: { amount, reason?, note? }
- */
+// POST /api/transactions/:id/refunds
 exports.addRefund = async (req, res) => {
     try {
         const { id } = req.params;

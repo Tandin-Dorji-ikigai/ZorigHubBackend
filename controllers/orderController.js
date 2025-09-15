@@ -1,16 +1,57 @@
-// controllers/orderController.js
 const mongoose = require('mongoose');
 const Order = require('../models/orderModel');
-const Product = require('../models/productModel'); // used to compute total from price
+const Product = require('../models/productModel');
+const Cart = require('../models/cartModel'); // if you want "create from cart"
+
+const isObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 const POPULATE = [
     { path: 'userId', select: 'fullName email' },
-    { path: 'seller', select: 'fullName dzongkhag gewog' },
-    { path: 'productId', select: 'name price image images' },
-    { path: 'transactionId', select: ' amount createdAt' },
+    { path: 'items.product', select: 'name price image images' },
+    { path: 'items.seller', select: 'fullName dzongkhag gewog' },
+    { path: 'transactionId', select: 'amount createdAt' }
 ];
 
-const isObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+// ---------- helpers ----------
+async function buildItemsFromClient(items) {
+    // items: [{ productId, quantity }]
+    if (!Array.isArray(items) || items.length === 0) {
+        throw new Error('items array is required');
+    }
+
+    const productIds = items.map(i => i.productId);
+    if (!productIds.every(isObjectId)) throw new Error('Invalid productId in items');
+
+    const products = await Product.find({ _id: { $in: productIds } })
+        .select('_id price userId') // userId is artisan/seller on your Product model
+        .lean();
+
+    const byId = new Map(products.map(p => [String(p._id), p]));
+    const built = items.map(i => {
+        const prod = byId.get(String(i.productId));
+        if (!prod) throw new Error(`Product not found: ${i.productId}`);
+
+        const qty = Math.max(1, Number(i.quantity || 1));
+        const price = Number(prod.price);
+        if (!Number.isFinite(price)) throw new Error(`Invalid price for product: ${i.productId}`);
+
+        return {
+            product: prod._id,
+            seller: prod.userId, // artisan reference from Product
+            quantity: qty,
+            price,
+            subtotal: price * qty
+        };
+    });
+
+    return built;
+}
+
+function computeTotal(items) {
+    return items.reduce((sum, it) => sum + it.subtotal, 0);
+}
+
+// ---------- controllers ----------
 
 // GET /api/orders
 exports.getAllOrders = async (req, res) => {
@@ -36,55 +77,75 @@ exports.getOrderById = async (req, res) => {
     }
 };
 
-// POST /api/orders
+/**
+ * POST /api/orders
+ * Body option A (direct):
+ * {
+ *   userId,
+ *   items: [{ productId, quantity }, ...],
+ *   transactionId? // optional at create time
+ * }
+ *
+ * Body option B (from cart):
+ * {
+ *   userId,
+ *   fromCart: true
+ * }
+ */
 exports.createOrder = async (req, res) => {
     try {
-        const { userId, productId, transactionId, seller, quantity = 1, status } = req.body;
+        const { userId, transactionId, items, fromCart } = req.body;
 
-        // Required fields
-        const missing = [];
-        if (!userId) missing.push('userId');
-        if (!productId) missing.push('productId');
-        if (!transactionId) missing.push('transactionId');
-        if (!seller) missing.push('seller');
-        if (missing.length) return res.status(400).json({ error: `Missing: ${missing.join(', ')}` });
-
-        // ObjectId validation
-        if (![userId, productId, transactionId, seller].every(isObjectId)) {
-            return res.status(400).json({ error: 'Invalid object id(s) provided' });
+        if (!userId) return res.status(400).json({ error: 'userId is required' });
+        if (!isObjectId(userId)) return res.status(400).json({ error: 'Invalid userId' });
+        if (transactionId && !isObjectId(transactionId)) {
+            return res.status(400).json({ error: 'Invalid transactionId' });
         }
 
-        // Status validation (optional on create)
-        if (status && !['pending', 'delivered', 'cancelled'].includes(status)) {
-            return res.status(400).json({ error: 'Invalid status value' });
+        let orderItems = [];
+
+        if (fromCart) {
+            // Build items from the user's cart
+            const cart = await Cart.findOne({ userId }).populate('items.productId', '_id price userId').lean();
+            if (!cart || !cart.items?.length) return res.status(400).json({ error: 'Cart is empty' });
+
+            orderItems = cart.items.map(ci => {
+                const p = ci.productId;
+                if (!p) throw new Error('Malformed cart item (no product)');
+                const qty = Math.max(1, Number(ci.quantity || 1));
+                const price = Number(p.price);
+                if (!Number.isFinite(price)) throw new Error(`Invalid price for product: ${p._id}`);
+                return {
+                    product: p._id,
+                    seller: p.userId,
+                    quantity: qty,
+                    price,
+                    subtotal: price * qty
+                };
+            });
+        } else {
+            // Build items from client-provided array
+            orderItems = await buildItemsFromClient(items);
         }
 
-        // Compute total server-side
-        const product = await Product.findById(productId).lean();
-        if (!product) return res.status(404).json({ error: 'Product not found' });
-
-        const qty = Math.max(1, Number(quantity) || 1);
-        const unitPrice = Number(product.price);
-        if (Number.isNaN(unitPrice)) {
-            return res.status(400).json({ error: 'Product price is invalid or missing' });
-        }
-        const totalAmount = unitPrice * qty;
+        const totalAmount = computeTotal(orderItems);
 
         const doc = await Order.create({
             userId,
-            productId,
-            transactionId,
-            seller,
-            quantity: qty,
+            items: orderItems,
             totalAmount,
-            status: status || 'pending',
+            transactionId: transactionId || undefined, // optional
+            status: 'pending'
         });
+
+        // (Optional) If you want to clear the cart immediately for COD-style flow,
+        // leave it for webhook if using an online payment gateway.
+        // await Cart.findOneAndUpdate({ userId }, { $set: { items: [] } });
 
         const populated = await Order.findById(doc._id).populate(POPULATE).lean();
         return res.status(201).json(populated);
     } catch (err) {
-        const code = err?.name === 'ValidationError' ? 400 : 400;
-        res.status(code).json({ error: err.message });
+        res.status(400).json({ error: err.message });
     }
 };
 
@@ -101,13 +162,14 @@ exports.getOrdersByUserId = async (req, res) => {
     }
 };
 
-// GET /api/orders/seller/:sellerId
+// NOTE: in multi-seller orders, there is no top-level "seller" field.
+// If you still want to filter by seller, query by 'items.seller'
 exports.getOrdersBySellerId = async (req, res) => {
     try {
         const { sellerId } = req.params;
         if (!isObjectId(sellerId)) return res.status(400).json({ error: 'Invalid seller id' });
 
-        const orders = await Order.find({ seller: sellerId }).populate(POPULATE).lean();
+        const orders = await Order.find({ 'items.seller': sellerId }).populate(POPULATE).lean();
         res.json(orders);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -121,7 +183,8 @@ exports.updateOrderStatus = async (req, res) => {
         if (!isObjectId(id)) return res.status(400).json({ error: 'Invalid order id' });
 
         const { status } = req.body;
-        if (!['pending', 'delivered', 'cancelled'].includes(status)) {
+        const allowed = ['pending', 'paid', 'delivered', 'cancelled', 'failed'];
+        if (!allowed.includes(status)) {
             return res.status(400).json({ error: 'Invalid status value' });
         }
 
