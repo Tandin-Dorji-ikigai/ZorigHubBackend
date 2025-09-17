@@ -6,8 +6,8 @@ require('dotenv').config();
 
 const ndiRoutes = require('./routes/ndi_routes');
 const webhookRoutes = require('./routes/webhook_routes');
-const googleAuthRoutes = require('./routes/googleAuth'); 
-const loggedInUser= require('./routes/authRoutes');
+const googleAuthRoutes = require('./routes/googleAuth');
+const loggedInUser = require('./routes/authRoutes');
 const app = express();
 
 app.use(express.json());
@@ -39,5 +39,9 @@ app.use('/api/logged', loggedInUser);
 
 app.use('/api/ndi', ndiRoutes);
 app.use('/api/ndi', webhookRoutes);
+
+
+//paypal endipoints
+app.use('/api', require('./routes/paypal/paypal'));
 
 module.exports = app;
